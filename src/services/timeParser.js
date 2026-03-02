@@ -1,9 +1,11 @@
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
+import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+dayjs.extend(customParseFormat);
 
 const WEEKDAY_MAP = {
   '日': 0,
@@ -80,6 +82,10 @@ function applyHourByPeriod(base, period, hourRaw, minuteRaw = 0) {
     hour = 0;
   }
 
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+
   return base.hour(hour).minute(minute).second(0).millisecond(0);
 }
 
@@ -114,8 +120,16 @@ function parseByRules(text, tz) {
   const ymdhm = raw.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})\s+(\d{1,2}):(\d{2})$/);
   if (ymdhm) {
     const [, y, m, d, h, mm] = ymdhm;
-    const dt = dayjs.tz(`${y}-${m}-${d} ${h}:${mm}`, 'YYYY-M-D H:mm', tz);
-    if (dt.isValid()) return { startsAt: dt.toISOString(), method: 'rule_ymdhm' };
+    const month = Number(m);
+    const day = Number(d);
+    const hour = Number(h);
+    const minute = Number(mm);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      const dt = dayjs.tz(`${y}-${m}-${d} ${h}:${mm}`, 'YYYY-M-D H:mm', tz);
+      if (dt.isValid() && dt.year() === Number(y) && dt.month() + 1 === month && dt.date() === day) {
+        return { startsAt: dt.toISOString(), method: 'rule_ymdhm' };
+      }
+    }
   }
 
   const rel = raw.match(new RegExp(`^(今天|明天|後天)\\s*${PERIOD_RE}?\\s*${HOUR_RE}?點?(?:\\s*${MINUTE_RE}分?)?$`));
@@ -124,6 +138,7 @@ function parseByRules(text, tz) {
     const offset = dayText === '今天' ? 0 : dayText === '明天' ? 1 : 2;
     let base = dayjs().tz(tz).add(offset, 'day');
     base = applyHourByPeriod(base, period, hour || 9, minute || 0);
+    if (!base) return null;
     return { startsAt: base.toISOString(), method: 'rule_relative_day' };
   }
 
@@ -136,24 +151,38 @@ function parseByRules(text, tz) {
     const delta = ((target - current + 7) % 7) + 7;
     let dt = now.add(delta, 'day');
     dt = applyHourByPeriod(dt, period, hour || 9, minute || 0);
+    if (!dt) return null;
     return { startsAt: dt.toISOString(), method: 'rule_next_weekday' };
   }
 
   const md = raw.match(new RegExp(`^(\\d{1,2})[\\/-](\\d{1,2})\\s*${PERIOD_RE}?\\s*${HOUR_RE}?點?(?:\\s*${MINUTE_RE}分?)?$`));
   if (md) {
-    const [, month, day, period, hour, minute] = md;
+    const [, monthRaw, dayRaw, period, hour, minute] = md;
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return null;
+    }
+
     const now = dayjs().tz(tz);
     let year = now.year();
     let dt = dayjs.tz(`${year}-${month}-${day}`, 'YYYY-M-D', tz);
+
+    if (!dt.isValid() || dt.month() + 1 !== month || dt.date() !== day) {
+      return null;
+    }
 
     // 若當年日期已過，推到下一年
     if (dt.endOf('day').isBefore(now)) {
       year += 1;
       dt = dayjs.tz(`${year}-${month}-${day}`, 'YYYY-M-D', tz);
+      if (!dt.isValid() || dt.month() + 1 !== month || dt.date() !== day) {
+        return null;
+      }
     }
 
     dt = applyHourByPeriod(dt, period, hour || 9, minute || 0);
-    if (dt.isValid()) return { startsAt: dt.toISOString(), method: 'rule_month_day' };
+    if (dt?.isValid()) return { startsAt: dt.toISOString(), method: 'rule_month_day' };
   }
 
   return null;
