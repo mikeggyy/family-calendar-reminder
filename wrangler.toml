@@ -1,0 +1,20 @@
+name = "nl-calendar-reminder-mvp"
+main = "worker/src/index.ts"
+compatibility_date = "2026-03-02"
+workers_dev = true
+
+[observability.logs]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nl-calendar-reminder-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+DEFAULT_TIMEZONE = "Asia/Taipei"
+FRONTEND_BASE_URL = "http://localhost:8788"
+GOOGLE_CALENDAR_ID = "primary"
+
+[triggers]
+crons = ["* * * * *"]

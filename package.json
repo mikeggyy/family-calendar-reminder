@@ -1,29 +1,26 @@
 {
-  "name": "nl-calendar-reminder-mvp",
-  "version": "0.1.0",
-  "description": "MVP backend for natural language calendar reminders",
+  "name": "nl-calendar-reminder-cf-mvp",
+  "version": "0.2.0",
+  "description": "Natural language calendar reminder MVP on Cloudflare (Pages + Workers + D1 + Cron)",
+  "private": true,
   "type": "module",
-  "main": "src/server.js",
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
-    "init-db": "node src/db/init.js",
-    "install:all": "npm install && npm --prefix nl-calendar-reminder-mvp install",
-    "dev:frontend": "npm --prefix nl-calendar-reminder-mvp run dev",
-    "dev:all": "concurrently -k \"npm run dev\" \"npm run dev:frontend\"",
-    "smoke:health": "bash ./scripts/smoke-health.sh",
-    "smoke:reminders": "bash ./scripts/smoke-reminders.sh",
-    "smoke": "npm run smoke:health && npm run smoke:reminders",
-    "test:time-parser": "node ./scripts/test-time-parser.js"
+    "dev": "wrangler dev --port 8787",
+    "dev:pages": "wrangler pages dev frontend/pages --port 8788",
+    "deploy": "wrangler deploy",
+    "deploy:pages": "wrangler pages deploy frontend/pages --project-name nl-calendar-reminder-pages",
+    "d1:create": "wrangler d1 create nl-calendar-reminder-db",
+    "d1:migrate:local": "wrangler d1 execute nl-calendar-reminder-db --local --file=./migrations/0001_init.sql",
+    "d1:migrate:remote": "wrangler d1 execute nl-calendar-reminder-db --remote --file=./migrations/0001_init.sql",
+    "smoke:local": "bash ./scripts/smoke-local.sh",
+    "smoke:preview": "bash ./scripts/smoke-preview.sh"
   },
   "dependencies": {
-    "@fastify/cors": "^11.1.0",
-    "better-sqlite3": "^11.8.1",
     "dayjs": "^1.11.13",
-    "dotenv": "^16.4.5",
-    "fastify": "^5.2.1"
+    "hono": "^4.6.13"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "typescript": "^5.7.2",
+    "wrangler": "^3.91.0"
   }
 }

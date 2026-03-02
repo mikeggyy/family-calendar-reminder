@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NL Calendar Reminder MVP</title>
+  <style>
+    body { font-family: sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+    input, button { padding: .5rem; margin: .25rem 0; width: 100%; }
+    button { cursor: pointer; }
+    pre { background: #111; color: #ddd; padding: 1rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>自然語言提醒（Cloudflare MVP）</h1>
+  <p>API Base: <code id="api"></code></p>
+  <input id="userId" placeholder="userId" value="u_demo" />
+  <input id="title" placeholder="標題" value="跟 PM 開會" />
+  <input id="text" placeholder="時間自然語句" value="明天下午三點" />
+  <button id="createBtn">建立提醒</button>
+  <button id="listBtn">查詢提醒</button>
+  <button id="oauthBtn">連線 Google Calendar</button>
+  <button id="syncBtn">同步 Google Calendar</button>
+  <pre id="out"></pre>
+
+<script>
+const API_BASE = window.API_BASE || 'http://127.0.0.1:8787';
+document.getElementById('api').textContent = API_BASE;
+const out = (x) => document.getElementById('out').textContent = JSON.stringify(x, null, 2);
+
+async function req(path, options={}) {
+  const res = await fetch(API_BASE + path, { headers: { 'content-type':'application/json' }, ...options });
+  const text = await res.text();
+  let body = text; try { body = JSON.parse(text); } catch {}
+  if (!res.ok) throw body;
+  return body;
+}
+
+const userId = () => document.getElementById('userId').value.trim();
+
+document.getElementById('createBtn').onclick = async () => {
+  try {
+    const data = await req('/api/reminders', { method:'POST', body: JSON.stringify({ userId:userId(), title: title.value, text: text.value }) });
+    out(data);
+  } catch (e) { out(e); }
+};
+
+document.getElementById('listBtn').onclick = async () => {
+  try { out(await req('/api/reminders?userId=' + encodeURIComponent(userId()))); }
+  catch (e) { out(e); }
+};
+
+document.getElementById('oauthBtn').onclick = async () => {
+  try {
+    const data = await req('/api/integrations/google/oauth/start?userId=' + encodeURIComponent(userId()));
+    location.href = data.authUrl;
+  } catch (e) { out(e); }
+};
+
+document.getElementById('syncBtn').onclick = async () => {
+  try { out(await req('/api/integrations/google/sync', { method:'POST', body: JSON.stringify({ userId:userId() }) })); }
+  catch (e) { out(e); }
+};
+</script>
+</body>
+</html>
