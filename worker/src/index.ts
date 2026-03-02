@@ -141,6 +141,11 @@ app.get('/api/integrations/google/oauth/callback', async (c) => {
     const tokens = await exchangeCodeForTokens(c.env, code);
     const accountEmail = decodeJwtPayload(tokens.idToken)?.email || null;
 
+    // Ensure FK target exists for integrations.user_id
+    await c.env.DB.prepare(`INSERT OR IGNORE INTO users (id, email) VALUES (?, ?)`)
+      .bind(stateRow.user_id, accountEmail)
+      .run();
+
     await c.env.DB.prepare(
       `INSERT INTO integrations (id, user_id, provider, access_token, refresh_token, expires_at, scope, metadata_json)
        VALUES (?, ?, 'google', ?, ?, ?, ?, ?)
