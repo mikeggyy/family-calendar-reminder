@@ -9,7 +9,7 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "nl-calendar-reminder-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "483b1e55-109e-470f-af35-75ad69a7cd32"
 
 [vars]
 DEFAULT_TIMEZONE = "Asia/Taipei"
