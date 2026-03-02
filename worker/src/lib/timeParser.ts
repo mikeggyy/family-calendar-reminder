@@ -41,6 +41,48 @@ function parseByRules(text: string, tz: string) {
     if (iso.isValid()) return { startsAt: iso.toISOString(), method: 'rule_iso' };
   }
 
+  // Fuzzy patterns embedded in reminder sentences, e.g. "提醒我 3/10 9:00 到職"
+  const relClock = raw.match(new RegExp(`(今天|明天|後天)\\s*${PERIOD_RE}?\\s*(${HOUR_RE})(?::(${MINUTE_RE}))?`));
+  if (relClock) {
+    const [, dayText, period, hour, minute] = relClock;
+    const offset = dayText === '今天' ? 0 : dayText === '明天' ? 1 : 2;
+    const base = applyHourByPeriod(dayjs().tz(tz).add(offset, 'day'), period, hour || 9, minute || 0);
+    if (!base) return null;
+    return { startsAt: base.toISOString(), method: 'rule_relative_day' };
+  }
+
+  const nextWeekClock = raw.match(new RegExp(`下週([一二三四五六日天])\\s*${PERIOD_RE}?\\s*(${HOUR_RE})(?::(${MINUTE_RE}))?`));
+  if (nextWeekClock) {
+    const [, wdTxt, period, hour, minute] = nextWeekClock;
+    const now = dayjs().tz(tz);
+    const delta = ((WEEKDAY_MAP[wdTxt] - now.day() + 7) % 7) + 7;
+    const dt = applyHourByPeriod(now.add(delta, 'day'), period, hour || 9, minute || 0);
+    if (!dt) return null;
+    return { startsAt: dt.toISOString(), method: 'rule_next_weekday' };
+  }
+
+  const mdClock = raw.match(new RegExp(`(\\d{1,2})[\\/-](\\d{1,2})\\s*${PERIOD_RE}?\\s*(${HOUR_RE})(?::(${MINUTE_RE}))?`));
+  if (mdClock) {
+    const [, monthRaw, dayRaw, period, hour, minute] = mdClock;
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+    const now = dayjs().tz(tz);
+    let year = now.year();
+    let dt = dayjs.tz(`${year}-${month}-${day}`, 'YYYY-M-D', tz);
+    if (!dt.isValid() || dt.month() + 1 !== month || dt.date() !== day) return null;
+    if (dt.endOf('day').isBefore(now)) {
+      year += 1;
+      dt = dayjs.tz(`${year}-${month}-${day}`, 'YYYY-M-D', tz);
+      if (!dt.isValid() || dt.month() + 1 !== month || dt.date() !== day) return null;
+    }
+
+    const withTime = applyHourByPeriod(dt, period, hour || 9, minute || 0);
+    if (!withTime) return null;
+    return { startsAt: withTime.toISOString(), method: 'rule_month_day' };
+  }
+
   const rel = raw.match(new RegExp(`^(今天|明天|後天)\\s*${PERIOD_RE}?\\s*${HOUR_RE}?點?(?:\\s*${MINUTE_RE}分?)?$`));
   if (rel) {
     const [, dayText, period, hour, minute] = rel;
