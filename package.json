@@ -13,7 +13,8 @@
     "dev:all": "concurrently -k \"npm run dev\" \"npm run dev:frontend\"",
     "smoke:health": "bash ./scripts/smoke-health.sh",
     "smoke:reminders": "bash ./scripts/smoke-reminders.sh",
-    "smoke": "npm run smoke:health && npm run smoke:reminders"
+    "smoke": "npm run smoke:health && npm run smoke:reminders",
+    "test:time-parser": "node ./scripts/test-time-parser.js"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
