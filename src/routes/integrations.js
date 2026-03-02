@@ -8,7 +8,7 @@ import {
   upsertGoogleCalendarEvent
 } from '../services/googleCalendar.js';
 
-const oauthStates = new Map();
+const OAUTH_STATE_TTL_SECONDS = 10 * 60;
 
 function decodeJwtPayload(jwt) {
   if (!jwt) return null;
@@ -19,6 +19,55 @@ function decodeJwtPayload(jwt) {
   } catch {
     return null;
   }
+}
+
+function cleanupExpiredOauthStates() {
+  db.prepare(`DELETE FROM oauth_states WHERE expires_at <= datetime('now')`).run();
+}
+
+function createOauthState({ userId }) {
+  cleanupExpiredOauthStates();
+
+  const state = randomUUID();
+  db.prepare(
+    `INSERT INTO oauth_states (state, user_id, expires_at)
+     VALUES (?, ?, datetime('now', '+' || ? || ' seconds'))`
+  ).run(state, userId, OAUTH_STATE_TTL_SECONDS);
+
+  return state;
+}
+
+function consumeOauthState(state) {
+  cleanupExpiredOauthStates();
+
+  const row = db
+    .prepare(`SELECT state, user_id, expires_at FROM oauth_states WHERE state = ?`)
+    .get(state);
+
+  if (!row) return null;
+
+  db.prepare(`DELETE FROM oauth_states WHERE state = ?`).run(state);
+
+  if (new Date(row.expires_at).getTime() <= Date.now()) {
+    return null;
+  }
+
+  return {
+    state: row.state,
+    userId: row.user_id
+  };
+}
+
+function buildFrontendOAuthRedirectUrl({ status, message }) {
+  const base = (process.env.FRONTEND_BASE_URL || 'http://localhost:5173').trim();
+  const url = new URL(base);
+  url.searchParams.set('oauth', status);
+  if (message) url.searchParams.set('message', message);
+  return url.toString();
+}
+
+function redirectOAuthResult(reply, { status, message }) {
+  return reply.redirect(buildFrontendOAuthRedirectUrl({ status, message }));
 }
 
 function getGoogleIntegration(userId) {
@@ -144,8 +193,7 @@ export default async function integrationRoutes(fastify) {
     const { userId } = req.query || {};
     if (!userId) return reply.code(400).send({ error: 'userId is required' });
 
-    const state = randomUUID();
-    oauthStates.set(state, { userId, createdAt: Date.now() });
+    const state = createOauthState({ userId });
 
     const authUrl = buildGoogleOAuthUrl({ state });
     return { authUrl };
@@ -153,12 +201,27 @@ export default async function integrationRoutes(fastify) {
 
   fastify.get('/api/integrations/google/oauth/callback', async (req, reply) => {
     const { code, state, error } = req.query || {};
-    if (error) return reply.code(400).send({ error: `OAuth failed: ${error}` });
-    if (!code || !state) return reply.code(400).send({ error: 'code and state are required' });
+    if (error) {
+      return redirectOAuthResult(reply, {
+        status: 'error',
+        message: `OAuth failed: ${String(error)}`
+      });
+    }
 
-    const stateData = oauthStates.get(state);
-    oauthStates.delete(state);
-    if (!stateData) return reply.code(400).send({ error: 'invalid or expired oauth state' });
+    if (!code || !state) {
+      return redirectOAuthResult(reply, {
+        status: 'error',
+        message: 'code and state are required'
+      });
+    }
+
+    const stateData = consumeOauthState(state);
+    if (!stateData) {
+      return redirectOAuthResult(reply, {
+        status: 'error',
+        message: 'invalid or expired oauth state'
+      });
+    }
 
     try {
       const tokens = await exchangeCodeForTokens(code);
@@ -169,16 +232,14 @@ export default async function integrationRoutes(fastify) {
         accountEmail: idTokenPayload?.email || null
       });
 
-      return reply.type('text/html').send(`
-        <html><body style="font-family: sans-serif; padding: 24px;">
-          <h2>Google Calendar 連線成功</h2>
-          <p>你可以關閉此頁，回到應用程式繼續操作。</p>
-        </body></html>
-      `);
+      return redirectOAuthResult(reply, {
+        status: 'success',
+        message: 'google_connected'
+      });
     } catch (e) {
-      return reply.code(500).send({
-        error: 'oauth_exchange_failed',
-        message: '無法完成 Google 授權，請稍後重試。'
+      return redirectOAuthResult(reply, {
+        status: 'error',
+        message: 'oauth_exchange_failed'
       });
     }
   });

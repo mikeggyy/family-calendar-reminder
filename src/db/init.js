@@ -52,8 +52,16 @@ export function initSchema() {
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_events_user_start ON events(user_id, starts_at);
     CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, remind_at);
+    CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);
   `);
 
   const columns = db.prepare(`PRAGMA table_info(integrations)`).all();

@@ -47,6 +47,7 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:3000/api/integrations/google/oauth/callback
 GOOGLE_CALENDAR_ID=primary
+FRONTEND_BASE_URL=http://localhost:5173
 ```
 
 ### 前端（`nl-calendar-reminder-mvp/.env`）
@@ -93,8 +94,8 @@ npm run dev:all
 3. 點「連線 Google Calendar」
    - 前端會呼叫 `/api/integrations/google/oauth/start?userId=u_demo`
    - 轉跳到 Google 授權頁
-   - 同意後回到後端 callback 頁（顯示連線成功）
-4. 回到前端重整頁面，確認連線狀態顯示已連線
+   - 同意後由後端 callback 重新導回前端 `FRONTEND_BASE_URL`，並帶上 `?oauth=success`（失敗則 `?oauth=error&message=...`）
+4. 前端會顯示授權結果訊息並更新連線狀態
 5. 點「手動同步」
    - 呼叫 `POST /api/integrations/google/sync`
    - 成功後會顯示同步筆數
@@ -134,7 +135,39 @@ curl -X POST http://localhost:3000/api/integrations/google/sync/<eventId> \
 
 ---
 
-## 8) 既有功能
+## 8) Smoke 測試腳本
+
+啟動後端後可快速檢查 API：
+
+```bash
+# 檢查 health
+npm run smoke:health
+
+# 建立/查詢/刪除提醒（smoke user）
+npm run smoke:reminders
+
+# 一次跑完
+npm run smoke
+```
+
+可用環境變數覆蓋：
+- `API_BASE_URL`（預設 `http://localhost:3000`）
+- `SMOKE_USER_ID`（預設 `u_smoke`）
+
+---
+
+## 9) 需要使用者動作（唯一必要步驟）
+
+只有 Google 授權必須由使用者親自完成：
+1. 在前端按下「連線 Google Calendar」。
+2. 在 Google 授權頁登入並按同意。
+3. 被導回前端後看到成功訊息即可。
+
+其餘（啟動、建立提醒、同步 API）皆可由系統自行處理。
+
+---
+
+## 10) 既有功能
 
 既有功能維持可用：
 - 新增提醒

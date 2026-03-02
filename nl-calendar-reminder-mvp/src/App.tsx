@@ -17,6 +17,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [oauthMessage, setOauthMessage] = useState<string | null>(null);
 
   const loadInitialData = async () => {
     setLoadingList(true);
@@ -38,6 +39,20 @@ export default function App() {
 
   useEffect(() => {
     loadInitialData();
+
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get('oauth');
+    const message = params.get('message');
+
+    if (oauth === 'success') {
+      setOauthMessage('Google Calendar 已成功連線。');
+    } else if (oauth === 'error') {
+      setError(message || 'Google 授權失敗');
+    }
+
+    if (oauth) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   const handleCreateReminder = async (text: string) => {
@@ -101,6 +116,7 @@ export default function App() {
       </header>
 
       {error ? <p className="error">{error}</p> : null}
+      {oauthMessage ? <p className="hint">{oauthMessage}</p> : null}
       {syncMessage ? <p className="hint">{syncMessage}</p> : null}
 
       <GoogleCalendarConnectButton
