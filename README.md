@@ -126,7 +126,11 @@ npm run deploy:pages
 行為與 `DELETE /api/reminders/:eventId?userId=...` 相同：
 - 缺少 `eventId` 或 `userId`：回 `400`
 - 找不到事件：回 `404`
-- 刪除成功：回 `200` 與 JSON `{ "ok": true, "eventId": "..." }`
+- 若事件有 `google_event_id` 且 Google 已連線，會先嘗試刪除 Google Calendar 遠端事件（`404` 視為已刪除）
+- 再刪除本地 `reminders/events`
+- 刪除成功：
+  - `DELETE` 端點維持 `204 No Content`
+  - `GET` fallback 回 `200` 與 JSON `{ "ok": true, "eventId": "...", "googleDeleted": true|false }`
 
 ---
 

@@ -93,15 +93,24 @@ app.get('/api/reminders', async (c) => {
 });
 
 async function deleteReminderEvent(env: Env, eventId: string, userId: string) {
-  const event = await env.DB.prepare('SELECT id FROM events WHERE id = ? AND user_id = ?').bind(eventId, userId).first();
-  if (!event) return false;
+  const event = await env.DB.prepare('SELECT id, google_event_id FROM events WHERE id = ? AND user_id = ?').bind(eventId, userId).first<any>();
+  if (!event) return { found: false, googleDeleted: false };
+
+  let googleDeleted = false;
+  if (event.google_event_id) {
+    const integration = await env.DB.prepare('SELECT id FROM integrations WHERE user_id = ? AND provider = ?').bind(userId, 'google').first();
+    if (integration) {
+      const accessToken = await getValidGoogleAccessToken(env, userId);
+      googleDeleted = await deleteGoogleCalendarEvent(env, accessToken, event.google_event_id);
+    }
+  }
 
   await env.DB.batch([
     env.DB.prepare('DELETE FROM reminders WHERE event_id = ?').bind(eventId),
     env.DB.prepare('DELETE FROM events WHERE id = ?').bind(eventId)
   ]);
 
-  return true;
+  return { found: true, googleDeleted };
 }
 
 app.delete('/api/reminders/:eventId', async (c) => {
@@ -109,8 +118,12 @@ app.delete('/api/reminders/:eventId', async (c) => {
   const userId = c.req.query('userId');
   if (!userId) return c.json({ error: 'userId is required' }, 400);
 
-  const ok = await deleteReminderEvent(c.env, eventId, userId);
-  if (!ok) return c.json({ error: 'event not found' }, 404);
+  try {
+    const result = await deleteReminderEvent(c.env, eventId, userId);
+    if (!result.found) return c.json({ error: 'event not found' }, 404);
+  } catch (e) {
+    return mapGoogleDeleteError(c, e);
+  }
 
   return c.body(null, 204);
 });
@@ -122,10 +135,14 @@ app.get('/api/reminders/delete', async (c) => {
   if (!eventId) return c.json({ error: 'eventId is required' }, 400);
   if (!userId) return c.json({ error: 'userId is required' }, 400);
 
-  const ok = await deleteReminderEvent(c.env, eventId, userId);
-  if (!ok) return c.json({ error: 'event not found' }, 404);
+  try {
+    const result = await deleteReminderEvent(c.env, eventId, userId);
+    if (!result.found) return c.json({ error: 'event not found' }, 404);
 
-  return c.json({ ok: true, eventId }, 200);
+    return c.json({ ok: true, eventId, googleDeleted: result.googleDeleted }, 200);
+  } catch (e) {
+    return mapGoogleDeleteError(c, e);
+  }
 });
 
 app.get('/api/integrations/google/oauth/start', async (c) => {
@@ -415,6 +432,25 @@ async function upsertGoogleCalendarEvent(env: Env, accessToken: string, event: a
   return data;
 }
 
+async function deleteGoogleCalendarEvent(env: Env, accessToken: string, googleEventId: string) {
+  const { calendarId } = googleConfig(env);
+  const url =
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}` +
+    `/events/${encodeURIComponent(googleEventId)}`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  if (response.status === 404) return true;
+  if (!response.ok) {
+    const data = await response.json<any>().catch(() => ({}));
+    throw new Error(`google_calendar_api_failed:${data?.error?.message || response.status}`);
+  }
+
+  return true;
+}
+
 async function syncSingleEvent(env: Env, userId: string, eventId: string) {
   const event = await env.DB.prepare('SELECT * FROM events WHERE id = ? AND user_id = ?').bind(eventId, userId).first<any>();
   if (!event) {
@@ -443,13 +479,21 @@ function mapGoogleSyncError(c: any, e: any) {
   if (e?.code === 'google_not_connected') return c.json({ error: 'not_connected', message: '尚未連線 Google Calendar。' }, 400);
   if (e?.code === 'google_refresh_token_missing') return c.json({ error: 'reauthorization_required', message: 'Google 授權已失效，請重新連線。' }, 400);
   if (e?.code === 'event_not_found') return c.json({ error: 'event_not_found', message: '找不到要同步的事件。' }, 404);
+  return c.json({ error: 'sync_failed', message: sanitizeGoogleApiError(e) }, 502);
+}
+
+function mapGoogleDeleteError(c: any, e: any) {
+  if (e?.code === 'google_refresh_token_missing') return c.json({ error: 'reauthorization_required', message: 'Google 授權已失效，請重新連線。' }, 400);
+  return c.json({ error: 'delete_failed', message: sanitizeGoogleApiError(e) }, 502);
+}
+
+function sanitizeGoogleApiError(e: any) {
   const raw = String(e?.message || 'sync_failed');
-  const safe = raw
+  return raw
     .replace(/client_secret=[^\s&]+/gi, 'client_secret=[redacted]')
     .replace(/refresh_token=[^\s&]+/gi, 'refresh_token=[redacted]')
     .replace(/access_token=[^\s&]+/gi, 'access_token=[redacted]')
     .replace(/id_token=[^\s&]+/gi, 'id_token=[redacted]')
     .replace(/token=[^\s&]+/gi, 'token=[redacted]')
     .slice(0, 200);
-  return c.json({ error: 'sync_failed', message: safe }, 502);
 }
