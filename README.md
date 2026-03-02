@@ -110,11 +110,23 @@ npm run deploy:pages
 - `POST /api/reminders`
 - `GET /api/reminders?userId=...`
 - `DELETE /api/reminders/:eventId?userId=...`
+- `GET /api/reminders/delete?eventId=...&userId=...`（受限環境刪除備援）
 - `GET /api/integrations/google/oauth/start?userId=...`
 - `GET /api/integrations/google/oauth/callback`
 - `GET /api/integrations/google/status?userId=...`
 - `POST /api/integrations/google/sync/:eventId`
 - `POST /api/integrations/google/sync`
+
+### 受限環境刪除備援
+
+若執行環境（例如某些 webhook / proxy / low-code 平台）無法送出 `DELETE` 方法，可改用：
+
+- `GET /api/reminders/delete?eventId=...&userId=...`
+
+行為與 `DELETE /api/reminders/:eventId?userId=...` 相同：
+- 缺少 `eventId` 或 `userId`：回 `400`
+- 找不到事件：回 `404`
+- 刪除成功：回 `200` 與 JSON `{ "ok": true, "eventId": "..." }`
 
 ---
 

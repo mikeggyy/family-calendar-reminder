@@ -92,20 +92,40 @@ app.get('/api/reminders', async (c) => {
   return c.json({ items: rows.results || [] });
 });
 
+async function deleteReminderEvent(env: Env, eventId: string, userId: string) {
+  const event = await env.DB.prepare('SELECT id FROM events WHERE id = ? AND user_id = ?').bind(eventId, userId).first();
+  if (!event) return false;
+
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM reminders WHERE event_id = ?').bind(eventId),
+    env.DB.prepare('DELETE FROM events WHERE id = ?').bind(eventId)
+  ]);
+
+  return true;
+}
+
 app.delete('/api/reminders/:eventId', async (c) => {
   const eventId = c.req.param('eventId');
   const userId = c.req.query('userId');
   if (!userId) return c.json({ error: 'userId is required' }, 400);
 
-  const event = await c.env.DB.prepare('SELECT id FROM events WHERE id = ? AND user_id = ?').bind(eventId, userId).first();
-  if (!event) return c.json({ error: 'event not found' }, 404);
-
-  await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM reminders WHERE event_id = ?').bind(eventId),
-    c.env.DB.prepare('DELETE FROM events WHERE id = ?').bind(eventId)
-  ]);
+  const ok = await deleteReminderEvent(c.env, eventId, userId);
+  if (!ok) return c.json({ error: 'event not found' }, 404);
 
   return c.body(null, 204);
+});
+
+app.get('/api/reminders/delete', async (c) => {
+  const eventId = c.req.query('eventId');
+  const userId = c.req.query('userId');
+
+  if (!eventId) return c.json({ error: 'eventId is required' }, 400);
+  if (!userId) return c.json({ error: 'userId is required' }, 400);
+
+  const ok = await deleteReminderEvent(c.env, eventId, userId);
+  if (!ok) return c.json({ error: 'event not found' }, 404);
+
+  return c.json({ ok: true, eventId }, 200);
 });
 
 app.get('/api/integrations/google/oauth/start', async (c) => {
