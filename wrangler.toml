@@ -13,7 +13,7 @@ database_id = "483b1e55-109e-470f-af35-75ad69a7cd32"
 
 [vars]
 DEFAULT_TIMEZONE = "Asia/Taipei"
-FRONTEND_BASE_URL = "http://localhost:8788"
+FRONTEND_BASE_URL = "https://family-calendar-reminder.mike721129.workers.dev"
 GOOGLE_CALENDAR_ID = "primary"
 
 [triggers]
