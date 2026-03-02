@@ -423,5 +423,13 @@ function mapGoogleSyncError(c: any, e: any) {
   if (e?.code === 'google_not_connected') return c.json({ error: 'not_connected', message: '尚未連線 Google Calendar。' }, 400);
   if (e?.code === 'google_refresh_token_missing') return c.json({ error: 'reauthorization_required', message: 'Google 授權已失效，請重新連線。' }, 400);
   if (e?.code === 'event_not_found') return c.json({ error: 'event_not_found', message: '找不到要同步的事件。' }, 404);
-  return c.json({ error: 'sync_failed', message: '同步 Google Calendar 失敗，請稍後再試。' }, 502);
+  const raw = String(e?.message || 'sync_failed');
+  const safe = raw
+    .replace(/client_secret=[^\s&]+/gi, 'client_secret=[redacted]')
+    .replace(/refresh_token=[^\s&]+/gi, 'refresh_token=[redacted]')
+    .replace(/access_token=[^\s&]+/gi, 'access_token=[redacted]')
+    .replace(/id_token=[^\s&]+/gi, 'id_token=[redacted]')
+    .replace(/token=[^\s&]+/gi, 'token=[redacted]')
+    .slice(0, 200);
+  return c.json({ error: 'sync_failed', message: safe }, 502);
 }
