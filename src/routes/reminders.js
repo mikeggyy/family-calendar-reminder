@@ -1,5 +1,6 @@
 import { parseNaturalTime } from '../services/timeParser.js';
 import { createEventWithReminders, deleteEventAndReminders, listUserReminders } from '../services/reminderService.js';
+import { tryAutoSyncEvent } from './integrations.js';
 
 function isValidTimeZone(tz) {
   try {
@@ -43,7 +44,9 @@ export default async function reminderRoutes(fastify) {
       parseMethod: parsed.method
     });
 
-    return reply.code(201).send(created);
+    const sync = await tryAutoSyncEvent({ userId, eventId: created.event.id, logger: req.log });
+
+    return reply.code(201).send({ ...created, sync });
   });
 
   fastify.get('/api/reminders', async (req, reply) => {

@@ -1,6 +1,7 @@
 import type {
   CreateReminderInput,
   GoogleCalendarConnection,
+  GoogleSyncResult,
   Reminder,
 } from '../types/reminder';
 
@@ -36,8 +37,15 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    let message = `Request failed: ${response.status}`;
+    try {
+      const body = (await response.json()) as { message?: string; error?: string };
+      message = body?.message || body?.error || message;
+    } catch {
+      const text = await response.text();
+      if (text) message = text;
+    }
+    throw new Error(message);
   }
 
   if (response.status === 204) {
@@ -96,18 +104,22 @@ export const reminderService = {
   },
 
   async getGoogleCalendarConnection(): Promise<GoogleCalendarConnection> {
-    return { connected: false };
+    return request<GoogleCalendarConnection>(
+      `/api/integrations/google/status?userId=${encodeURIComponent(USER_ID)}`,
+    );
   },
 
-  async connectGoogleCalendar(): Promise<GoogleCalendarConnection> {
-    await request('/api/integrations/google/connect', {
+  async connectGoogleCalendar(): Promise<void> {
+    const data = await request<{ authUrl: string }>(
+      `/api/integrations/google/oauth/start?userId=${encodeURIComponent(USER_ID)}`,
+    );
+    window.location.href = data.authUrl;
+  },
+
+  async syncGoogleCalendar(): Promise<GoogleSyncResult> {
+    return request<GoogleSyncResult>('/api/integrations/google/sync', {
       method: 'POST',
       body: JSON.stringify({ userId: USER_ID }),
     });
-
-    return {
-      connected: true,
-      accountEmail: '已連線（MVP）',
-    };
   },
 };
