@@ -195,8 +195,18 @@ export default async function integrationRoutes(fastify) {
 
     const state = createOauthState({ userId });
 
-    const authUrl = buildGoogleOAuthUrl({ state });
-    return { authUrl };
+    try {
+      const authUrl = buildGoogleOAuthUrl({ state });
+      return { authUrl };
+    } catch (e) {
+      if (String(e?.message || '').startsWith('missing_env:')) {
+        return reply.code(500).send({
+          error: 'google_oauth_not_configured',
+          message: e.message
+        });
+      }
+      throw e;
+    }
   });
 
   fastify.get('/api/integrations/google/oauth/callback', async (req, reply) => {
