@@ -156,8 +156,8 @@ app.get('/api/integrations/google/oauth/callback', async (c) => {
       .run();
 
     return c.redirect(buildFrontendOAuthRedirectUrl(c.env, 'success', 'google_connected'));
-  } catch {
-    return c.redirect(buildFrontendOAuthRedirectUrl(c.env, 'error', 'oauth_exchange_failed'));
+  } catch (e) {
+    return c.redirect(buildFrontendOAuthRedirectUrl(c.env, 'error', buildOAuthExchangeErrorMessage(e)));
   }
 });
 
@@ -275,6 +275,19 @@ function buildFrontendOAuthRedirectUrl(env: Env, status: string, message?: strin
   url.searchParams.set('oauth', status);
   if (message) url.searchParams.set('message', message);
   return url.toString();
+}
+
+function buildOAuthExchangeErrorMessage(error: unknown) {
+  const raw = String((error as Error)?.message || 'oauth_exchange_failed');
+  const parsed = raw.startsWith('google_token_failed:') ? raw.slice('google_token_failed:'.length) : raw;
+  const redacted = parsed
+    .replace(/client_secret=[^\s&]+/gi, 'client_secret=[redacted]')
+    .replace(/refresh_token=[^\s&]+/gi, 'refresh_token=[redacted]')
+    .replace(/access_token=[^\s&]+/gi, 'access_token=[redacted]')
+    .replace(/id_token=[^\s&]+/gi, 'id_token=[redacted]')
+    .replace(/token=[^\s&]+/gi, 'token=[redacted]');
+  const safe = redacted.replace(/[^a-zA-Z0-9._\- ]/g, '_').trim().slice(0, 120);
+  return safe || 'oauth_exchange_failed';
 }
 
 async function postForm(url: string, payload: Record<string, string>) {
