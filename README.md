@@ -112,6 +112,7 @@ npm run deploy:pages
     - 事件前 **1 天同一時間**
     - 事件前 **2 小時**
   - 即使事件距離現在少於 2 小時，`事件前 2 小時` 的提醒仍會照規則寫入（可能為過去時間）
+- `GET /api/reminders/create?userId=...&title=...&text=...&timezone=...`（受限環境建立備援）
 - `GET /api/reminders?userId=...`
 - `DELETE /api/reminders/:eventId?userId=...`
 - `GET /api/reminders/delete?eventId=...&userId=...`（受限環境刪除備援）
@@ -120,6 +121,25 @@ npm run deploy:pages
 - `GET /api/integrations/google/status?userId=...`
 - `POST /api/integrations/google/sync/:eventId`
 - `POST /api/integrations/google/sync`
+
+### 受限環境建立備援（GET）
+
+若執行環境（例如某些 webhook / proxy / low-code 平台）只能發 GET（無法發 POST JSON），可改用：
+
+- `GET /api/reminders/create?userId=...&title=...&text=...&timezone=...`
+
+行為與 `POST /api/reminders` 相同：
+- 解析 `text` 自然語句時間，建立 `events`
+- 固定建立兩筆提醒：事件前 **1 天同時**、事件前 **2 小時**
+- 回傳同等 JSON：`{ event, reminders, sync }`，HTTP `201`
+- 缺少必要參數（`userId/title/text`）：回 `400`
+- 解析失敗：回 `422`
+
+範例：
+
+```bash
+curl "https://<your-worker-domain>/api/reminders/create?userId=u123&title=%E7%B9%B3%E4%BF%9D%E8%B2%BB&text=%E4%B8%8B%E9%80%B1%E4%BA%8C%E4%B8%8B%E5%8D%883%E9%BB%9E&timezone=Asia%2FTaipei"
+```
 
 ### 受限環境刪除備援
 

@@ -33,6 +33,24 @@ app.post('/api/reminders', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { userId, title, text, timezone } = body as Record<string, string>;
 
+  return createReminderFromInput(c, { userId, title, text, timezone });
+});
+
+app.get('/api/reminders/create', async (c) => {
+  const userId = c.req.query('userId');
+  const title = c.req.query('title');
+  const text = c.req.query('text');
+  const timezone = c.req.query('timezone') || undefined;
+
+  return createReminderFromInput(c, { userId, title, text, timezone });
+});
+
+async function createReminderFromInput(
+  c: any,
+  input: { userId?: string; title?: string; text?: string; timezone?: string }
+) {
+  const { userId, title, text, timezone } = input;
+
   if (!userId || !title || !text) {
     return c.json({ error: 'userId, title, text are required' }, 400);
   }
@@ -72,7 +90,7 @@ app.post('/api/reminders', async (c) => {
 
   const sync = await tryAutoSyncEvent(c.env, userId, eventId);
   return c.json({ event, reminders: reminders.results || [], sync }, 201);
-});
+}
 
 app.get('/api/reminders', async (c) => {
   const userId = c.req.query('userId');
