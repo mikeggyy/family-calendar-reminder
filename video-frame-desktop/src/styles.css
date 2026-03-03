@@ -1,0 +1,19 @@
+:root { font-family: Inter, system-ui, Arial, sans-serif; color: #1f2937; background:#f7f7fb; }
+body { margin:0; }
+.app { max-width:900px; margin:0 auto; padding:20px; }
+header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.tabs button { margin-left:8px; }
+button { border:1px solid #d1d5db; border-radius:8px; padding:10px 14px; background:white; cursor:pointer; }
+button.active { background:#111827; color:white; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+.dropzone { border:2px dashed #9ca3af; border-radius:10px; padding:20px; background:white; display:flex; flex-direction:column; gap:10px; }
+.dropzone small { word-break: break-all; }
+.actions { margin-top:16px; background:white; padding:16px; border-radius:10px; display:flex; flex-direction:column; gap:10px; }
+.progress-wrap { width:100%; height:10px; background:#e5e7eb; border-radius:99px; overflow:hidden; }
+.progress { height:100%; background:#10b981; transition:width .2s ease; }
+.job-item { margin-top:12px; background:white; border-radius:10px; padding:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.settings { background:white; border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+label { display:flex; flex-direction:column; gap:6px; }
+input { padding:10px; border-radius:8px; border:1px solid #d1d5db; }
+.muted { color:#6b7280; }
+.error { color:#b91c1c; font-weight:600; }
