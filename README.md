@@ -59,7 +59,7 @@ npm run d1:migrate:remote
 - `DEFAULT_TIMEZONE`
 - `FRONTEND_BASE_URL`
 - `GOOGLE_CALENDAR_ID`
-- `EVENT_RETENTION_DAYS`（預設 `7`，Cron 清理本地過期事件的保留天數）
+- `EVENT_RETENTION_DAYS`（未設定時預設 `30`，Cron 清理本地過期事件的保留天數）
 
 ### secrets（需另外設定）
 ```bash
@@ -122,6 +122,7 @@ npm run deploy:pages
 - `GET /api/integrations/google/status?userId=...`
 - `POST /api/integrations/google/sync/:eventId`
 - `POST /api/integrations/google/sync`
+- `GET /api/admin/housekeeping`（資料治理統計與最近清理時間）
 
 ### 受限環境建立備援（GET）
 
@@ -133,6 +134,7 @@ npm run deploy:pages
 - 解析 `text` 自然語句時間，建立 `events`
 - 固定建立兩筆提醒：事件前 **1 天同時**、事件前 **2 小時**
 - 回傳同等 JSON：`{ event, reminders, sync }`，HTTP `201`
+- 若短時間重複送出相同 `userId + title + starts_at`，回傳既有事件（`200`，`deduplicated: true`）避免資料膨脹
 - 缺少必要參數（`userId/title/text`）：回 `400`
 - 解析失敗：回 `422`
 
@@ -171,15 +173,32 @@ Worker `scheduled` handler 每分鐘：
 1. 查 `status='pending' AND remind_at <= now()` 的提醒
 2. 模擬發送（console log）
 3. 更新 `status='sent'`, `sent_at=datetime('now')`
-4. 執行過期事件本地清理（**只清 D1 本地資料，不會呼叫 Google API、也不會刪 Google Calendar**）：
+4. 執行資料治理 housekeeping（**只清 D1 本地資料，不會呼叫 Google API、也不會刪 Google Calendar**）：
    - 過期判斷：`events.starts_at < now - EVENT_RETENTION_DAYS`
-   - `EVENT_RETENTION_DAYS` 預設為 `7`
+   - `EVENT_RETENTION_DAYS` 未設定時預設為 `30`
    - 會先刪對應 `reminders`，再刪 `events`
-   - 會輸出清理統計 log：`cleanedEvents` / `cleanedReminders`
+   - 清掉過期 `oauth_states`
+   - 清掉 `status='pending'` 且 `remind_at` 早於 7 天前的 stale reminders
+   - 會輸出與保存清理統計（可由 `/api/admin/housekeeping` 查詢）
 
 ---
 
-## 8) 測試
+## 8) 零維運資料治理
+
+本專案內建「零維運」資料治理，不需人工排程或手動清表：
+
+- 排程每分鐘自動處理到期提醒並執行完整 housekeeping。
+- 自動清理三類資料：
+  - `cleanupExpiredEvents`：清掉超過保留期的事件與其 reminders。
+  - `cleanupExpiredOauthStates`：清掉過期 OAuth state。
+  - `cleanupStalePendingReminders`：清掉 7 天前仍 pending 的提醒。
+- `EVENT_RETENTION_DAYS` 可調整保留天數；未設定預設 `30` 天。
+- 建立提醒時，對短時間重複相同事件做去重，避免提醒資料膨脹。
+- `GET /api/admin/housekeeping` 可查看目前資料量與最近一次清理摘要。
+
+---
+
+## 9) 測試
 
 ### 時間解析最小單元測試（Node built-in test runner）
 ```bash
@@ -198,7 +217,7 @@ API_BASE_URL=https://<your-worker-domain> npm run smoke:preview
 
 ---
 
-## 9) Google OAuth / Calendar 同步現況
+## 10) Google OAuth / Calendar 同步現況
 
 ✅ 已完成：
 - OAuth start/callback/status API 介面

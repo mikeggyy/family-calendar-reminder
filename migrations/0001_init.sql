@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS housekeeping_state (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_user_start ON events(user_id, starts_at);
+CREATE INDEX IF NOT EXISTS idx_events_starts_at ON events(starts_at);
+CREATE INDEX IF NOT EXISTS idx_events_dedup_lookup ON events(user_id, title, starts_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, remind_at);
+CREATE INDEX IF NOT EXISTS idx_reminders_event_id ON reminders(event_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);

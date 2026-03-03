@@ -25,10 +25,54 @@ type ReminderRow = {
   starts_at: string;
 };
 
+type HousekeepingSummary = {
+  runAt: string;
+  sentReminders: number;
+  cleanedEvents: number;
+  cleanedEventReminders: number;
+  cleanedOauthStates: number;
+  cleanedStalePendingReminders: number;
+  retentionDays: number;
+  stalePendingDays: number;
+};
+
+const HOUSEKEEPING_DEFAULT_RETENTION_DAYS = 30;
+const HOUSEKEEPING_STALE_PENDING_DAYS = 7;
+const REMINDER_DEDUP_WINDOW_MINUTES = 10;
+const HOUSEKEEPING_STATE_KEY = 'last_cleanup';
+let housekeepingSchemaReady: Promise<void> | null = null;
+
 const app = new Hono<{ Bindings: Env }>();
 app.use('*', cors());
+app.use('*', async (c, next) => {
+  await ensureHousekeepingSchema(c.env);
+  await next();
+});
 
 app.get('/health', (c) => c.json({ ok: true, runtime: 'cloudflare-worker' }));
+
+app.get('/api/admin/housekeeping', async (c) => {
+  const retentionDays = parseRetentionDays(c.env.EVENT_RETENTION_DAYS);
+  const [events, reminders, pendingReminders, oauthStates, lastCleanup] = await Promise.all([
+    c.env.DB.prepare(`SELECT COUNT(*) AS count FROM events`).first<{ count: number | string }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS count FROM reminders`).first<{ count: number | string }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS count FROM reminders WHERE status = 'pending'`).first<{ count: number | string }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS count FROM oauth_states`).first<{ count: number | string }>(),
+    getLastHousekeepingSummary(c.env)
+  ]);
+
+  return c.json({
+    retentionDays,
+    stalePendingDays: HOUSEKEEPING_STALE_PENDING_DAYS,
+    counts: {
+      events: Number(events?.count || 0),
+      reminders: Number(reminders?.count || 0),
+      pendingReminders: Number(pendingReminders?.count || 0),
+      oauthStates: Number(oauthStates?.count || 0)
+    },
+    lastCleanup: lastCleanup || null
+  });
+});
 
 app.post('/api/reminders', async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -62,6 +106,22 @@ async function createReminderFromInput(
   const parsed = await parseNaturalTime(text, tz);
   if (!parsed) {
     return c.json({ error: 'time_parse_failed', message: 'Unable to parse time expression.' }, 422);
+  }
+
+  const existingEvent = await c.env.DB.prepare(
+    `SELECT * FROM events
+     WHERE user_id = ? AND title = ? AND starts_at = ?
+       AND created_at >= datetime('now', '-' || ? || ' minutes')
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
+    .bind(userId, title, parsed.startsAt, REMINDER_DEDUP_WINDOW_MINUTES)
+    .first<any>();
+  if (existingEvent) {
+    const existingReminders = await c.env.DB.prepare('SELECT * FROM reminders WHERE event_id = ? ORDER BY remind_at ASC')
+      .bind(existingEvent.id)
+      .all();
+    return c.json({ event: existingEvent, reminders: existingReminders.results || [], sync: null, deduplicated: true }, 200);
   }
 
   await c.env.DB.prepare('INSERT OR IGNORE INTO users (id, timezone) VALUES (?, ?)').bind(userId, tz).run();
@@ -165,6 +225,8 @@ app.get('/api/integrations/google/oauth/start', async (c) => {
   const userId = c.req.query('userId');
   if (!userId) return c.json({ error: 'userId is required' }, 400);
 
+  await cleanupExpiredOauthStates(c.env);
+
   const state = crypto.randomUUID();
   await c.env.DB.prepare(`INSERT INTO oauth_states (state, user_id, expires_at) VALUES (?, ?, datetime('now', '+10 minutes'))`)
     .bind(state, userId)
@@ -185,6 +247,8 @@ app.get('/api/integrations/google/oauth/callback', async (c) => {
 
   if (err) return c.redirect(buildFrontendOAuthRedirectUrl(c.env, 'error', `OAuth failed: ${err}`));
   if (!code || !state) return c.redirect(buildFrontendOAuthRedirectUrl(c.env, 'error', 'code and state are required'));
+
+  await cleanupExpiredOauthStates(c.env);
 
   const stateRow = await c.env.DB.prepare('SELECT state, user_id, expires_at FROM oauth_states WHERE state = ?').bind(state).first<any>();
   await c.env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(state).run();
@@ -269,6 +333,7 @@ app.post('/api/integrations/google/sync', async (c) => {
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env) {
+    await ensureHousekeepingSchema(env);
     const nowIso = new Date().toISOString();
     const due = await env.DB.prepare(
       `SELECT r.*, e.title, e.starts_at
@@ -279,12 +344,28 @@ export default {
       .bind(nowIso)
       .all<ReminderRow>();
 
+    let sentReminders = 0;
     for (const row of due.results || []) {
       console.log(`[cron] sending reminder ${row.id} event=${row.event_id} title=${row.title}`);
       await env.DB.prepare(`UPDATE reminders SET status='sent', sent_at=datetime('now') WHERE id = ?`).bind(row.id).run();
+      sentReminders += 1;
     }
 
-    await cleanupExpiredEvents(env, nowIso);
+    const eventsCleanup = await cleanupExpiredEvents(env, nowIso);
+    const cleanedOauthStates = await cleanupExpiredOauthStates(env);
+    const stalePendingCleanup = await cleanupStalePendingReminders(env, nowIso);
+    const summary: HousekeepingSummary = {
+      runAt: nowIso,
+      sentReminders,
+      cleanedEvents: eventsCleanup.cleanedEvents,
+      cleanedEventReminders: eventsCleanup.cleanedReminders,
+      cleanedOauthStates,
+      cleanedStalePendingReminders: stalePendingCleanup.cleanedReminders,
+      retentionDays: eventsCleanup.retentionDays,
+      stalePendingDays: stalePendingCleanup.staleDays
+    };
+    await saveHousekeepingSummary(env, summary);
+    console.log(`[cron] housekeeping summary ${JSON.stringify(summary)}`);
   }
 };
 
@@ -303,7 +384,7 @@ function isValidTimeZone(tz: string) {
 
 function parseRetentionDays(raw?: string) {
   const parsed = Number.parseInt(String(raw ?? ''), 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 7;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : HOUSEKEEPING_DEFAULT_RETENTION_DAYS;
 }
 
 async function cleanupExpiredEvents(env: Env, nowIso: string) {
@@ -335,9 +416,74 @@ async function cleanupExpiredEvents(env: Env, nowIso: string) {
     await env.DB.prepare('DELETE FROM events WHERE starts_at < ?').bind(cutoffIso).run();
   }
 
-  console.log(
-    `[cron] cleanup expired local events done retentionDays=${retentionDays} cutoff=${cutoffIso} cleanedEvents=${cleanedEvents} cleanedReminders=${cleanedReminders}`
-  );
+  return { retentionDays, cutoffIso, cleanedEvents, cleanedReminders };
+}
+
+async function cleanupExpiredOauthStates(env: Env) {
+  const result = await env.DB.prepare(`DELETE FROM oauth_states WHERE expires_at <= datetime('now')`).run();
+  return getD1Changes(result);
+}
+
+async function cleanupStalePendingReminders(env: Env, nowIso: string, staleDays = HOUSEKEEPING_STALE_PENDING_DAYS) {
+  const cutoffIso = new Date(new Date(nowIso).getTime() - staleDays * 24 * 60 * 60 * 1000).toISOString();
+  const result = await env.DB.prepare(
+    `DELETE FROM reminders
+     WHERE status = 'pending' AND remind_at < ?`
+  )
+    .bind(cutoffIso)
+    .run();
+  return { staleDays, cutoffIso, cleanedReminders: getD1Changes(result) };
+}
+
+function getD1Changes(result: unknown) {
+  const changes = (result as { meta?: { changes?: number } })?.meta?.changes;
+  return Number(changes || 0);
+}
+
+async function ensureHousekeepingSchema(env: Env) {
+  if (!housekeepingSchemaReady) {
+    housekeepingSchemaReady = (async () => {
+      await env.DB.batch([
+        env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS housekeeping_state (
+             key TEXT PRIMARY KEY,
+             value_json TEXT NOT NULL,
+             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           )`
+        ),
+        env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_events_starts_at ON events(starts_at)`),
+        env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_events_dedup_lookup ON events(user_id, title, starts_at, created_at)`),
+        env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_reminders_event_id ON reminders(event_id)`)
+      ]);
+    })();
+  }
+
+  try {
+    await housekeepingSchemaReady;
+  } catch (e) {
+    housekeepingSchemaReady = null;
+    throw e;
+  }
+}
+
+async function saveHousekeepingSummary(env: Env, summary: HousekeepingSummary) {
+  await env.DB.prepare(
+    `INSERT INTO housekeeping_state (key, value_json, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`
+  )
+    .bind(HOUSEKEEPING_STATE_KEY, JSON.stringify(summary))
+    .run();
+}
+
+async function getLastHousekeepingSummary(env: Env): Promise<HousekeepingSummary | null> {
+  const row = await env.DB.prepare(`SELECT value_json FROM housekeeping_state WHERE key = ?`).bind(HOUSEKEEPING_STATE_KEY).first<{ value_json: string }>();
+  if (!row?.value_json) return null;
+  try {
+    return JSON.parse(row.value_json) as HousekeepingSummary;
+  } catch {
+    return null;
+  }
 }
 
 function requiredEnv(env: Env, name: keyof Env) {
