@@ -173,14 +173,19 @@ Worker `scheduled` handler 每分鐘：
 
 ---
 
-## 8) Smoke 測試
+## 8) 測試
 
-### 本地（wrangler dev）
+### 時間解析最小單元測試（Node built-in test runner）
+```bash
+node --test --experimental-strip-types worker/src/lib/timeParser.test.ts
+```
+
+### Smoke 測試（本地 wrangler dev）
 ```bash
 npm run smoke:local
 ```
 
-### 預覽/正式
+### Smoke 測試（預覽/正式）
 ```bash
 API_BASE_URL=https://<your-worker-domain> npm run smoke:preview
 ```

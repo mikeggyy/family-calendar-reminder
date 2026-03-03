@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
-import customParseFormat from 'dayjs/plugin/customParseFormat';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
+import customParseFormat from 'dayjs/plugin/customParseFormat.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -9,8 +9,8 @@ dayjs.extend(customParseFormat);
 
 const WEEKDAY_MAP: Record<string, number> = { 日: 0, 天: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 };
 const PERIOD_RE = '(凌晨|早上|上午|中午|下午|晚上)';
-const HOUR_RE = '(\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
-const MINUTE_RE = '(\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
+const HOUR_RE = '(?:\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
+const MINUTE_RE = '(?:\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
 
 function parseChineseNumber(raw: unknown): number | null {
   if (raw == null || raw === '') return null;

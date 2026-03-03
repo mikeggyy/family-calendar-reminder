@@ -19,8 +19,8 @@ const WEEKDAY_MAP = {
 };
 
 const PERIOD_RE = '(凌晨|早上|上午|中午|下午|晚上)';
-const HOUR_RE = '(\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
-const MINUTE_RE = '(\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
+const HOUR_RE = '(?:\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
+const MINUTE_RE = '(?:\\d{1,2}|[零一二兩三四五六七八九十]{1,3})';
 
 function parseChineseNumber(raw) {
   if (raw == null || raw === '') return null;
