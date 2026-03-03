@@ -56,18 +56,15 @@ app.post('/api/reminders', async (c) => {
     .run();
 
   const eventTime = new Date(parsed.startsAt).getTime();
-  const now = Date.now() - 60_000;
-  const schedule = [new Date(eventTime - 24 * 60 * 60 * 1000), new Date(eventTime)];
+  const schedule = [new Date(eventTime - 24 * 60 * 60 * 1000), new Date(eventTime - 2 * 60 * 60 * 1000)];
 
   for (const at of schedule) {
-    if (at.getTime() > now) {
-      await c.env.DB.prepare(
-        `INSERT INTO reminders (id, event_id, user_id, remind_at, channel, status)
-         VALUES (?, ?, ?, ?, 'in_app', 'pending')`
-      )
-        .bind(createId('rmd'), eventId, userId, at.toISOString())
-        .run();
-    }
+    await c.env.DB.prepare(
+      `INSERT INTO reminders (id, event_id, user_id, remind_at, channel, status)
+       VALUES (?, ?, ?, ?, 'in_app', 'pending')`
+    )
+      .bind(createId('rmd'), eventId, userId, at.toISOString())
+      .run();
   }
 
   const event = await c.env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(eventId).first();

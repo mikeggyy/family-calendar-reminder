@@ -108,6 +108,10 @@ npm run deploy:pages
 
 - `GET /health`
 - `POST /api/reminders`
+  - 建立事件時固定寫入兩筆提醒時間：
+    - 事件前 **1 天同一時間**
+    - 事件前 **2 小時**
+  - 即使事件距離現在少於 2 小時，`事件前 2 小時` 的提醒仍會照規則寫入（可能為過去時間）
 - `GET /api/reminders?userId=...`
 - `DELETE /api/reminders/:eventId?userId=...`
 - `GET /api/reminders/delete?eventId=...&userId=...`（受限環境刪除備援）
