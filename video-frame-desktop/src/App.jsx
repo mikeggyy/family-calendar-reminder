@@ -36,6 +36,26 @@ function extractPathFromDrop(event) {
   return ''
 }
 
+function cleanDisplayPath(path) {
+  if (!path) return ''
+  let cleaned = String(path).trim()
+
+  if (cleaned.startsWith('file://')) {
+    cleaned = cleaned.replace(/^file:\/+/i, '')
+    if (/^[A-Za-z]:\//.test(cleaned)) {
+      cleaned = cleaned.replaceAll('/', '\\')
+    }
+  }
+
+  if (cleaned.startsWith('\\\\?\\UNC\\')) {
+    cleaned = `\\\\${cleaned.slice('\\\\?\\UNC\\'.length)}`
+  } else if (cleaned.startsWith('\\\\?\\')) {
+    cleaned = cleaned.slice('\\\\?\\'.length)
+  }
+
+  return cleaned
+}
+
 export default function App() {
   const [tab, setTab] = useState('process')
   const [filePath, setFilePath] = useState('')
@@ -161,6 +181,17 @@ export default function App() {
     }
   }
 
+  const openOutputFolder = async (job) => {
+    setStatusText('開啟輸出資料夾...')
+    try {
+      await invoke('open_output_dir', { outputDir: job.output_dir })
+      setStatusText('已開啟輸出資料夾')
+    } catch (error) {
+      const msg = typeof error === 'string' ? error : String(error)
+      setStatusText(`開啟資料夾失敗：${msg}`)
+    }
+  }
+
   return (
     <div className="app">
       <header>
@@ -199,10 +230,13 @@ export default function App() {
                 <div>
                   <strong>{job.job_id}</strong>
                   <p>Frames: {job.frame_count}</p>
-                  <p>Output: {job.output_dir}</p>
-                  <p>Metadata: {job.metadata_path}</p>
+                  <p>Output: {cleanDisplayPath(job.output_dir)}</p>
+                  <p>Metadata: {cleanDisplayPath(job.metadata_path)}</p>
                 </div>
-                <button onClick={() => mockSubmit(job)}>Mock 送 AI API</button>
+                <div className="job-actions">
+                  <button onClick={() => openOutputFolder(job)}>開啟輸出資料夾</button>
+                  <button onClick={() => mockSubmit(job)}>Mock 送 AI API</button>
+                </div>
               </article>
             ))}
           </section>

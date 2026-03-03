@@ -255,6 +255,48 @@ fn mock_submit_ai(endpoint: String, token: String, metadata_path: String) -> Res
     ))
 }
 
+#[tauri::command]
+fn open_output_dir(output_dir: String) -> Result<(), String> {
+    let path = Path::new(&output_dir);
+
+    if !path.exists() {
+        return Err(format!(
+            "找不到輸出資料夾，可能已被移動或刪除：{}",
+            output_dir
+        ));
+    }
+
+    if !path.is_dir() {
+        return Err(format!("輸出路徑不是資料夾：{}", output_dir));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("無法開啟 Windows 檔案總管：{e}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("無法開啟 Finder：{e}"))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("無法開啟資料夾：{e}"))?;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -262,7 +304,8 @@ pub fn run() {
             pick_video_file,
             inspect_video_file,
             process_video,
-            mock_submit_ai
+            mock_submit_ai,
+            open_output_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
