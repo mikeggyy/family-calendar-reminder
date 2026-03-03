@@ -1,5 +1,6 @@
 use chrono::Utc;
 use regex::Regex;
+use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -98,7 +99,20 @@ fn inspect_video_file(input_path: String) -> Result<SelectedFileInfo, String> {
 }
 
 #[tauri::command]
-fn process_video(app: AppHandle, input_path: String) -> Result<ProcessResult, String> {
+fn pick_video_file() -> Result<Option<SelectedFileInfo>, String> {
+    let selected = FileDialog::new()
+        .add_filter("MP4 Video", &["mp4"])
+        .pick_file();
+
+    selected
+        .map(|path| inspect_path(path.to_string_lossy().as_ref()))
+        .transpose()
+}
+
+fn process_video_internal<F>(input_path: &str, mut emit_progress: F) -> Result<ProcessResult, String>
+where
+    F: FnMut(ProgressPayload),
+{
     let inspected = inspect_path(&input_path)?;
     let input_path = inspected.path;
     let input = Path::new(&input_path);
@@ -113,14 +127,10 @@ fn process_video(app: AppHandle, input_path: String) -> Result<ProcessResult, St
 
     let duration = run_ffprobe_duration(&input_path).unwrap_or(0.0);
 
-    app.emit(
-        "process-progress",
-        ProgressPayload {
-            progress: 0.0,
-            message: "FFmpeg 擷取中...".into(),
-        },
-    )
-    .ok();
+    emit_progress(ProgressPayload {
+        progress: 0.0,
+        message: "FFmpeg 擷取中...".into(),
+    });
 
     let mut child = Command::new("ffmpeg")
         .arg("-i")
@@ -150,14 +160,10 @@ fn process_video(app: AppHandle, input_path: String) -> Result<ProcessResult, St
                 0.0
             };
 
-            app.emit(
-                "process-progress",
-                ProgressPayload {
-                    progress: pct,
-                    message: format!("處理中 {:.1}%", pct),
-                },
-            )
-            .ok();
+            emit_progress(ProgressPayload {
+                progress: pct,
+                message: format!("處理中 {:.1}%", pct),
+            });
         }
     }
 
@@ -205,14 +211,10 @@ fn process_video(app: AppHandle, input_path: String) -> Result<ProcessResult, St
     )
     .map_err(|e| e.to_string())?;
 
-    app.emit(
-        "process-progress",
-        ProgressPayload {
-            progress: 100.0,
-            message: "處理完成".into(),
-        },
-    )
-    .ok();
+    emit_progress(ProgressPayload {
+        progress: 100.0,
+        message: "處理完成".into(),
+    });
 
     Ok(ProcessResult {
         job_id,
@@ -223,6 +225,13 @@ fn process_video(app: AppHandle, input_path: String) -> Result<ProcessResult, St
             .to_string(),
         metadata_path: metadata_path.to_string_lossy().to_string(),
         frame_count: metadata.frame_count,
+    })
+}
+
+#[tauri::command]
+fn process_video(app: AppHandle, input_path: String) -> Result<ProcessResult, String> {
+    process_video_internal(&input_path, |payload| {
+        app.emit("process-progress", payload).ok();
     })
 }
 
@@ -250,6 +259,7 @@ fn mock_submit_ai(endpoint: String, token: String, metadata_path: String) -> Res
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            pick_video_file,
             inspect_video_file,
             process_video,
             mock_submit_ai

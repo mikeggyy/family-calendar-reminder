@@ -76,7 +76,7 @@ export default function App() {
 
   const applySelectedPath = async (rawPath, fallbackSize) => {
     if (!rawPath) {
-      setFileError('讀不到檔案路徑，請改用「選擇檔案」或重新拖拉一次。')
+      setFileError('拖拉檔案時未取得可用完整路徑。請改用「選擇影片（原生）」選擇 mp4。')
       setFilePath('')
       setFileSize(null)
       return
@@ -97,9 +97,23 @@ export default function App() {
     }
   }
 
-  const onFileInput = async (event) => {
-    const f = event.target.files?.[0]
-    await applySelectedPath(f?.path || '', typeof f?.size === 'number' ? f.size : null)
+  const onNativePick = async () => {
+    setStatusText('開啟原生檔案選擇器...')
+    try {
+      const info = await invoke('pick_video_file')
+      if (!info) {
+        setStatusText('已取消選擇')
+        return
+      }
+      setFilePath(info.path)
+      setFileSize(info.size)
+      setFileError('')
+      setStatusText(`已選擇影片：${info.path}`)
+    } catch (error) {
+      const msg = typeof error === 'string' ? error : String(error)
+      setFileError(`選擇失敗：${msg}`)
+      setStatusText(`選檔失敗：${msg}`)
+    }
   }
 
   const onDrop = async (event) => {
@@ -160,8 +174,8 @@ export default function App() {
       {tab === 'process' && (
         <>
           <section className="dropzone" onDrop={onDrop} onDragOver={onDragOver}>
-            <p>拖拉 mp4 到這裡，或手動選檔</p>
-            <input type="file" accept="video/mp4,.mp4" onChange={onFileInput} />
+            <p>拖拉 mp4 到這裡，或使用原生選擇器</p>
+            <button type="button" onClick={onNativePick}>選擇影片（原生）</button>
             <small>路徑：{filePath || '尚未選擇檔案'}</small>
             <small>大小：{fileSize === null ? '-' : formatBytes(fileSize)}</small>
             {fileError && <small className="error">{fileError}</small>}
