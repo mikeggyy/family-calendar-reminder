@@ -15,6 +15,7 @@ database_id = "483b1e55-109e-470f-af35-75ad69a7cd32"
 DEFAULT_TIMEZONE = "Asia/Taipei"
 FRONTEND_BASE_URL = "https://family-calendar-reminder.mike721129.workers.dev"
 GOOGLE_CALENDAR_ID = "primary"
+EVENT_RETENTION_DAYS = "7"
 
 [triggers]
 crons = ["* * * * *"]

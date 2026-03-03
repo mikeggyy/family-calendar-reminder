@@ -10,6 +10,7 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   GOOGLE_REDIRECT_URI?: string;
   GOOGLE_CALENDAR_ID?: string;
+  EVENT_RETENTION_DAYS?: string;
 }
 
 type ReminderRow = {
@@ -268,19 +269,22 @@ app.post('/api/integrations/google/sync', async (c) => {
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env) {
+    const nowIso = new Date().toISOString();
     const due = await env.DB.prepare(
       `SELECT r.*, e.title, e.starts_at
        FROM reminders r JOIN events e ON e.id = r.event_id
        WHERE r.status = 'pending' AND r.remind_at <= ?
        ORDER BY r.remind_at ASC`
     )
-      .bind(new Date().toISOString())
+      .bind(nowIso)
       .all<ReminderRow>();
 
     for (const row of due.results || []) {
       console.log(`[cron] sending reminder ${row.id} event=${row.event_id} title=${row.title}`);
       await env.DB.prepare(`UPDATE reminders SET status='sent', sent_at=datetime('now') WHERE id = ?`).bind(row.id).run();
     }
+
+    await cleanupExpiredEvents(env, nowIso);
   }
 };
 
@@ -295,6 +299,45 @@ function isValidTimeZone(tz: string) {
   } catch {
     return false;
   }
+}
+
+function parseRetentionDays(raw?: string) {
+  const parsed = Number.parseInt(String(raw ?? ''), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 7;
+}
+
+async function cleanupExpiredEvents(env: Env, nowIso: string) {
+  const retentionDays = parseRetentionDays(env.EVENT_RETENTION_DAYS);
+  const cutoffIso = new Date(new Date(nowIso).getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const expiredEventsCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM events WHERE starts_at < ?').bind(cutoffIso).first<{ count: number | string }>();
+  const expiredRemindersCount = await env.DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM reminders
+     WHERE event_id IN (SELECT id FROM events WHERE starts_at < ?)`
+  )
+    .bind(cutoffIso)
+    .first<{ count: number | string }>();
+
+  const cleanedEvents = Number(expiredEventsCount?.count || 0);
+  const cleanedReminders = Number(expiredRemindersCount?.count || 0);
+
+  if (cleanedReminders > 0) {
+    await env.DB.prepare(
+      `DELETE FROM reminders
+       WHERE event_id IN (SELECT id FROM events WHERE starts_at < ?)`
+    )
+      .bind(cutoffIso)
+      .run();
+  }
+
+  if (cleanedEvents > 0) {
+    await env.DB.prepare('DELETE FROM events WHERE starts_at < ?').bind(cutoffIso).run();
+  }
+
+  console.log(
+    `[cron] cleanup expired local events done retentionDays=${retentionDays} cutoff=${cutoffIso} cleanedEvents=${cleanedEvents} cleanedReminders=${cleanedReminders}`
+  );
 }
 
 function requiredEnv(env: Env, name: keyof Env) {

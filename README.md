@@ -59,6 +59,7 @@ npm run d1:migrate:remote
 - `DEFAULT_TIMEZONE`
 - `FRONTEND_BASE_URL`
 - `GOOGLE_CALENDAR_ID`
+- `EVENT_RETENTION_DAYS`（預設 `7`，Cron 清理本地過期事件的保留天數）
 
 ### secrets（需另外設定）
 ```bash
@@ -170,6 +171,11 @@ Worker `scheduled` handler 每分鐘：
 1. 查 `status='pending' AND remind_at <= now()` 的提醒
 2. 模擬發送（console log）
 3. 更新 `status='sent'`, `sent_at=datetime('now')`
+4. 執行過期事件本地清理（**只清 D1 本地資料，不會呼叫 Google API、也不會刪 Google Calendar**）：
+   - 過期判斷：`events.starts_at < now - EVENT_RETENTION_DAYS`
+   - `EVENT_RETENTION_DAYS` 預設為 `7`
+   - 會先刪對應 `reminders`，再刪 `events`
+   - 會輸出清理統計 log：`cleanedEvents` / `cleanedReminders`
 
 ---
 
